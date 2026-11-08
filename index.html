@@ -8,9 +8,11 @@
 </head>
 <body>
 <h1>🐍 Snake Game</h1>
-<div id="info">Score: <b id="score">0</b> &nbsp;|&nbsp; Best: <b id="best">0</b></div>
+<div id="info">Score: <b id="score">0</b> &nbsp;|&nbsp; Level: <b id="level">1</b> &nbsp;|&nbsp; Best: <b id="best">0</b></div>
 <canvas id="c" width="400" height="400"></canvas>
-<p>Steer with the arrow keys, WASD or by swiping. Press Space or tap to start and to retry.</p>
+<p>Steer with the arrow keys, WASD or by swiping. Press Space or tap to start and to retry.<br>
+Grab the gold square quickly for +5 points. The game speeds up every 5 foods. Press M to mute.</p>
+<button id="mute" type="button">🔊 Sound: on</button>
 <div id="pad">
   <button data-dx="0" data-dy="-1" aria-label="Up">▲</button>
   <button data-dx="-1" data-dy="0" aria-label="Left">◀</button>
