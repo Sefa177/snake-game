@@ -236,13 +236,18 @@ function tick() {
     hy = (hy + N) % N;
   }
   const head = { x: hx, y: hy };
+  if (gold && Date.now() > gold.expires) gold = null;
+
+  const willEat = (head.x === food.x && head.y === food.y)
+    || (gold && head.x === gold.x && head.y === gold.y);
   const hitWall = !wrap && (hx < 0 || hy < 0 || hx >= N || hy >= N);
-  const hitSelf = snake.some(s => s.x === head.x && s.y === head.y);
+  // The tail cell is free to enter: it moves away this tick, unless the snake grows
+  const last = snake.length - 1;
+  const hitSelf = snake.some((s, i) =>
+    s.x === head.x && s.y === head.y && !(i === last && !willEat));
   if (hitWall || hitSelf) return gameOver();
 
   snake.unshift(head);
-
-  if (gold && Date.now() > gold.expires) gold = null;
 
   if (head.x === food.x && head.y === food.y) {
     food = null;
