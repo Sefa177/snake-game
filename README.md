@@ -22,4 +22,15 @@ A small retro snake game that runs in the browser. Plain HTML, CSS and JavaScrip
 - Works on desktop and phones
 
 ## Running it
-Open `index.html` in your browser, or play it online on GitHub Pages.
+Play it online: https://sefa177.github.io/snake-game/
+
+To run it locally, start a small web server in the project folder (opening `index.html` directly no longer works, because the browser will not load the `.wasm` file from disk):
+
+    python -m http.server 8000
+
+Then open http://localhost:8000.
+
+## Built with
+- **Rust compiled to WebAssembly:** the game rules (movement, input buffer, collisions, gold food, levels, win condition) live in `rust/src/lib.rs` and are built to `snake_core.wasm`
+- **JavaScript:** canvas drawing, sound (Web Audio), keyboard and touch input, the game timer and the local high-score table
+- Rebuild the engine with `sh build.sh` (needs Rust and the `wasm32-unknown-unknown` target)
