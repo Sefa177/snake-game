@@ -10,15 +10,36 @@
 <h1>🐍 Snake Game</h1>
 <div id="info">Score: <b id="score">0</b> &nbsp;|&nbsp; Level: <b id="level">1</b> &nbsp;|&nbsp; Best: <b id="best">0</b></div>
 <canvas id="c" width="400" height="400"></canvas>
-<p>Steer with the arrow keys, WASD or by swiping. Press Space or tap to start and to retry.<br>
-Grab the gold square quickly for +5 points. The game speeds up every 5 foods. Press M to mute.</p>
-<button id="mute" type="button">🔊 Sound: on</button>
 <div id="pad">
   <button data-dx="0" data-dy="-1" aria-label="Up">▲</button>
   <button data-dx="-1" data-dy="0" aria-label="Left">◀</button>
   <button data-dx="0" data-dy="1" aria-label="Down">▼</button>
   <button data-dx="1" data-dy="0" aria-label="Right">▶</button>
 </div>
+<div id="buttons">
+  <button id="pause" type="button" disabled>⏸ Pause</button>
+  <button id="mute" type="button">🔊 Sound: on</button>
+</div>
+<div id="settings">
+  <label>Difficulty
+    <select id="difficulty">
+      <option value="easy">Easy</option>
+      <option value="medium" selected>Medium</option>
+      <option value="hard">Hard</option>
+    </select>
+  </label>
+  <label>Walls
+    <select id="walls">
+      <option value="solid" selected>Solid</option>
+      <option value="wrap">Wrap-around</option>
+    </select>
+  </label>
+</div>
+<p>Steer with the arrow keys, WASD or by swiping. Press Space or tap to start and to retry.<br>
+P pauses, M mutes. Grab the gold square quickly for +5 points. The game speeds up every 5 foods.<br>
+Wrap-around mode (dashed border) lets you pass through the walls. Settings can be changed between games.</p>
+<h2>🏆 Top 5</h2>
+<ol id="scores"></ol>
 <script src="game.js"></script>
 </body>
 </html>
