@@ -9,11 +9,8 @@ const DIFFICULTY = {
   hard:   { label: "Hard",   base: 85,  min: 45 },
 };
 const SPEED_STEP = 8;        // ms faster per level
-const FOODS_PER_LEVEL = 5;   // foods needed to level up
-const GOLD_CHANCE = 0.2;     // chance a gold square appears after eating
-const GOLD_TIME = 5000;      // ms a gold square stays
-const GOLD_POINTS = 5;
 const MAX_SCORES = 5;        // size of the high-score table
+// Game rules (levels, gold food, collisions, win) live in Rust: rust/src/lib.rs
 
 // Page elements
 const diffSel = document.getElementById("difficulty");
@@ -22,9 +19,12 @@ const pauseBtn = document.getElementById("pause");
 const muteBtn = document.getElementById("mute");
 const scoresEl = document.getElementById("scores");
 
-let snake, dir, food, gold, score, eaten, level, loop, running;
-let queue = [];  // buffered turns (max 2) so quick key presses are not lost
-let paused = false, goldLeft = 0;
+let loop, running;
+let paused = false;
+let wasm = null; // the Rust game engine, loaded at the bottom of this file
+
+// Results of wasm.game_tick (same numbers as in rust/src/lib.rs)
+const MOVED = 0, ATE_FOOD = 1, ATE_GOLD = 2, DIED = 3, WON = 4;
 
 // ---------- Settings (difficulty + walls) ----------
 let difficulty = "medium", wrap = false;
@@ -92,7 +92,7 @@ function renderScores(highlight) {
 }
 
 // Returns the rank (0 = best) if the score made the table, otherwise -1
-function addScore() {
+function addScore(score, level) {
   if (score <= 0) return -1;
   const entry = { s: score, l: level, d: difficulty, w: wrap };
   scores.push(entry);
@@ -160,9 +160,11 @@ muteBtn.addEventListener("click", () => {
 });
 
 // ---------- Game ----------
+// The rules live in Rust (rust/src/lib.rs, built to snake_core.wasm).
+// This file keeps the timer, drawing, sound, input and the high-score table.
 function delay() {
   const d = DIFFICULTY[difficulty];
-  return Math.max(d.min, d.base - (level - 1) * SPEED_STEP);
+  return Math.max(d.min, d.base - (wasm.game_level() - 1) * SPEED_STEP);
 }
 
 function setSpeed() {
@@ -171,38 +173,14 @@ function setSpeed() {
 }
 
 function updateHud() {
-  document.getElementById("score").textContent = score;
-  document.getElementById("level").textContent = level;
-}
-
-function isFree(x, y) {
-  return !snake.some(s => s.x === x && s.y === y)
-    && !(food && food.x === x && food.y === y)
-    && !(gold && gold.x === x && gold.y === y);
-}
-
-// Returns a random empty cell, or null when the board is completely full
-function randomFree() {
-  const free = [];
-  for (let y = 0; y < N; y++) {
-    for (let x = 0; x < N; x++) {
-      if (isFree(x, y)) free.push({ x, y });
-    }
-  }
-  return free.length ? free[Math.floor(Math.random() * free.length)] : null;
+  document.getElementById("score").textContent = wasm.game_score();
+  document.getElementById("level").textContent = wasm.game_level();
 }
 
 function start() {
+  if (!wasm) return; // engine is still loading
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-  snake = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }];
-  dir = { x: 1, y: 0 };
-  queue = [];
-  score = 0;
-  eaten = 0;
-  level = 1;
-  gold = null;
-  food = null;
-  food = randomFree();
+  wasm.game_init(N, wrap ? 1 : 0, (Math.random() * 4294967296) >>> 0);
   paused = false;
   pauseBtn.textContent = "⏸ Pause";
   pauseBtn.disabled = false;
@@ -214,58 +192,18 @@ function start() {
   draw();
 }
 
-function onEat(points, isGold) {
-  score += points;
-  eaten++;
-  const leveledUp = eaten % FOODS_PER_LEVEL === 0;
-  if (leveledUp) {
-    level++;
-    setSpeed();
-  }
-  updateHud();
-  if (leveledUp) sfx.level();
-  else if (isGold) sfx.gold();
-  else sfx.eat();
-}
-
 function tick() {
-  if (queue.length) dir = queue.shift();
-  let hx = snake[0].x + dir.x, hy = snake[0].y + dir.y;
-  if (wrap) { // walls are open: come out on the other side
-    hx = (hx + N) % N;
-    hy = (hy + N) % N;
-  }
-  const head = { x: hx, y: hy };
-  if (gold && Date.now() > gold.expires) gold = null;
-
-  const willEat = (head.x === food.x && head.y === food.y)
-    || (gold && head.x === gold.x && head.y === gold.y);
-  const hitWall = !wrap && (hx < 0 || hy < 0 || hx >= N || hy >= N);
-  // The tail cell is free to enter: it moves away this tick, unless the snake grows
-  const last = snake.length - 1;
-  const hitSelf = snake.some((s, i) =>
-    s.x === head.x && s.y === head.y && !(i === last && !willEat));
-  if (hitWall || hitSelf) return gameOver();
-
-  snake.unshift(head);
-
-  if (head.x === food.x && head.y === food.y) {
-    food = null;
-    food = randomFree();
-    if (food && !gold && Math.random() < GOLD_CHANCE) {
-      const g = randomFree();
-      if (g) {
-        g.expires = Date.now() + GOLD_TIME;
-        gold = g;
-      }
-    }
-    onEat(1, false);
-    if (!food) return gameOver(true); // no empty cell left: the snake fills the board
-  } else if (gold && head.x === gold.x && head.y === gold.y) {
-    gold = null;
-    onEat(GOLD_POINTS, true);
-  } else {
-    snake.pop();
+  const levelBefore = wasm.game_level();
+  const result = wasm.game_tick(Date.now());
+  if (result === DIED) return gameOver(false);
+  if (result !== MOVED) { // ate food or gold (or filled the board)
+    const leveledUp = wasm.game_level() > levelBefore;
+    if (leveledUp) setSpeed();
+    updateHud();
+    if (result === WON) return gameOver(true);
+    if (leveledUp) sfx.level();
+    else if (result === ATE_GOLD) sfx.gold();
+    else sfx.eat();
   }
   draw();
 }
@@ -278,12 +216,13 @@ function gameOver(won = false) {
   pauseBtn.textContent = "⏸ Pause";
   lockSettings(false);
   if (won) sfx.level(); else sfx.over();
+  const score = wasm.game_score(), level = wasm.game_level();
   if (score > best) {
     best = score;
     document.getElementById("best").textContent = best;
     try { localStorage.setItem("snake-best", best); } catch (e) {}
   }
-  const rank = addScore();
+  const rank = addScore(score, level);
   draw();
   const lines = [
     "Score: " + score + "  |  Level: " + level,
@@ -300,7 +239,7 @@ function pause() {
   if (!running || paused) return;
   paused = true;
   clearInterval(loop);
-  if (gold) goldLeft = gold.expires - Date.now(); // freeze the gold timer too
+  wasm.game_pause(Date.now()); // freezes the gold timer too
   pauseBtn.textContent = "▶ Resume";
   draw();
   overlay("Paused", ["Press P or tap to resume"], 0.6);
@@ -309,7 +248,7 @@ function pause() {
 function resume() {
   if (!running || !paused) return;
   paused = false;
-  if (gold) gold.expires = Date.now() + goldLeft;
+  wasm.game_resume(Date.now());
   pauseBtn.textContent = "⏸ Pause";
   setSpeed();
   draw();
@@ -345,31 +284,34 @@ function overlay(title, lines, alpha) {
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // normal food (null when the board is full)
-  if (food) {
+  // normal food (-1 when the board is full)
+  const fx = wasm.game_food_x();
+  if (fx >= 0) {
     ctx.fillStyle = "#ff5a5f";
     ctx.beginPath();
-    ctx.arc(food.x * SIZE + SIZE / 2, food.y * SIZE + SIZE / 2, SIZE / 2 - 2, 0, Math.PI * 2);
+    ctx.arc(fx * SIZE + SIZE / 2, wasm.game_food_y() * SIZE + SIZE / 2, SIZE / 2 - 2, 0, Math.PI * 2);
     ctx.fill();
   }
 
   // gold food (blinks when it is about to disappear)
-  if (gold) {
-    const left = paused ? goldLeft : gold.expires - Date.now();
+  const gx = wasm.game_gold_x();
+  if (gx >= 0) {
+    const gy = wasm.game_gold_y();
+    const left = wasm.game_gold_ms_left(Date.now());
     const hidden = left < 1500 && !paused && Math.floor(Date.now() / 150) % 2 === 0;
     if (!hidden) {
       ctx.fillStyle = "#ffd700";
-      ctx.fillRect(gold.x * SIZE + 2, gold.y * SIZE + 2, SIZE - 4, SIZE - 4);
+      ctx.fillRect(gx * SIZE + 2, gy * SIZE + 2, SIZE - 4, SIZE - 4);
       ctx.fillStyle = "#fff3a0";
-      ctx.fillRect(gold.x * SIZE + 6, gold.y * SIZE + 6, SIZE - 12, SIZE - 12);
+      ctx.fillRect(gx * SIZE + 6, gy * SIZE + 6, SIZE - 12, SIZE - 12);
     }
   }
 
-  // snake
-  snake.forEach((s, i) => {
+  // snake (segment 0 is the head)
+  for (let i = 0, len = wasm.game_snake_len(); i < len; i++) {
     ctx.fillStyle = i === 0 ? "#7CFC9A" : "#3fbf6b";
-    ctx.fillRect(s.x * SIZE + 1, s.y * SIZE + 1, SIZE - 2, SIZE - 2);
-  });
+    ctx.fillRect(wasm.game_snake_x(i) * SIZE + 1, wasm.game_snake_y(i) * SIZE + 1, SIZE - 2, SIZE - 2);
+  }
 }
 
 // ---------- Controls ----------
@@ -382,12 +324,7 @@ const keys = {
 
 function turn(dx, dy) {
   if (!running || paused) return;
-  // compare with the last turn that is already waiting (or the current direction)
-  const last = queue.length ? queue[queue.length - 1] : dir;
-  if (dx === last.x && dy === last.y) return;     // same direction, nothing to do
-  if (dx === -last.x && dy === -last.y) return;   // prevent reversing into yourself
-  if (queue.length >= 2) return;                  // keep the buffer small
-  queue.push({ x: dx, y: dy });
+  wasm.game_turn(dx, dy); // the engine buffers quick turns and blocks U-turns
 }
 
 document.addEventListener("keydown", e => {
@@ -443,12 +380,25 @@ document.querySelectorAll("#pad button").forEach(b => {
   });
 });
 
-// ---------- Start screen ----------
-snake = [{ x: 10, y: 10 }];
-food = { x: 15, y: 10 };
-gold = null;
-score = 0; eaten = 0; level = 1;
+// ---------- Start screen + loading the Rust engine ----------
 running = false;
 pauseBtn.disabled = true;
-draw();
-overlay("Snake", ["Press Space or tap to start"], 0.55);
+
+(async function boot() {
+  try {
+    const res = await fetch("snake_core.wasm");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const { instance } = await WebAssembly.instantiate(await res.arrayBuffer(), {});
+    wasm = instance.exports;
+    wasm.game_init(N, wrap ? 1 : 0, (Math.random() * 4294967296) >>> 0);
+    draw();
+    overlay("Snake", ["Press Space or tap to start"], 0.55);
+  } catch (err) {
+    console.error("Could not load snake_core.wasm:", err);
+    overlay("Snake", [
+      "Could not load the game engine.",
+      "Open the game from a web server,",
+      "not directly from a file.",
+    ], 0.9);
+  }
+})();

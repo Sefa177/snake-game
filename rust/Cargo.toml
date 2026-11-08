@@ -1,0 +1,14 @@
+[package]
+name = "snake_core"
+version = "0.1.0"
+edition = "2021"
+description = "Snake game rules, compiled to WebAssembly"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+strip = true
