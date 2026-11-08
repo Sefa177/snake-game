@@ -10,7 +10,13 @@
 <h1>🐍 Snake Game</h1>
 <div id="info">Score: <b id="score">0</b> &nbsp;|&nbsp; Best: <b id="best">0</b></div>
 <canvas id="c" width="400" height="400"></canvas>
-<p>Steer with the arrow keys or WASD. Press Space to start and to retry.</p>
+<p>Steer with the arrow keys, WASD or by swiping. Press Space or tap to start and to retry.</p>
+<div id="pad">
+  <button data-dx="0" data-dy="-1" aria-label="Up">▲</button>
+  <button data-dx="-1" data-dy="0" aria-label="Left">◀</button>
+  <button data-dx="0" data-dy="1" aria-label="Down">▼</button>
+  <button data-dx="1" data-dy="0" aria-label="Right">▶</button>
+</div>
 <script src="game.js"></script>
 </body>
 </html>

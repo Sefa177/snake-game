@@ -25,6 +25,42 @@ canvas {
   border: 2px solid #3a3f4f;
   border-radius: 8px;
   max-width: 95vw;
+  height: auto;
+  touch-action: none;
+}
+
+body {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* On-screen arrow buttons: only on touch devices */
+#pad {
+  display: none;
+  grid-template-columns: repeat(3, 64px);
+  grid-template-rows: repeat(2, 64px);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#pad button {
+  font-size: 1.5rem;
+  border: 2px solid #3a3f4f;
+  border-radius: 12px;
+  background: #1d2029;
+  color: #e8e8e8;
+  touch-action: none;
+}
+
+#pad button:active { background: #3a3f4f; }
+#pad button[aria-label="Up"]    { grid-column: 2; grid-row: 1; }
+#pad button[aria-label="Left"]  { grid-column: 1; grid-row: 2; }
+#pad button[aria-label="Down"]  { grid-column: 2; grid-row: 2; }
+#pad button[aria-label="Right"] { grid-column: 3; grid-row: 2; }
+
+@media (pointer: coarse) {
+  #pad { display: grid; }
 }
 
 p {

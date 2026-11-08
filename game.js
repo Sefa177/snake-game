@@ -57,7 +57,7 @@ function gameOver() {
   ctx.font = "bold 28px system-ui";
   ctx.fillText("Game Over", canvas.width / 2, 190);
   ctx.font = "16px system-ui";
-  ctx.fillText("Press Space to play again", canvas.width / 2, 220);
+  ctx.fillText("Press Space or tap to play again", canvas.width / 2, 220);
 }
 
 function draw() {
@@ -79,14 +79,54 @@ const keys = {
   ArrowRight: [1, 0], d: [1, 0], D: [1, 0],
 };
 
+function turn(dx, dy) {
+  if (!running) return;
+  // prevent reversing into yourself
+  if (dx === -dir.x && dy === -dir.y) return;
+  nextDir = { x: dx, y: dy };
+}
+
 document.addEventListener("keydown", e => {
   if (e.code === "Space") { e.preventDefault(); if (!running) start(); return; }
   const k = keys[e.key];
   if (!k || !running) return;
   e.preventDefault();
-  // prevent reversing into yourself
-  if (k[0] === -dir.x && k[1] === -dir.y) return;
-  nextDir = { x: k[0], y: k[1] };
+  turn(k[0], k[1]);
+});
+
+// Touch: swipe on the canvas to steer, tap it to start / retry
+let touchStart = null, swiped = false;
+canvas.addEventListener("touchstart", e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  touchStart = { x: t.clientX, y: t.clientY };
+  swiped = false;
+}, { passive: false });
+
+canvas.addEventListener("touchmove", e => {
+  e.preventDefault();
+  if (!touchStart) return;
+  const t = e.touches[0];
+  const dx = t.clientX - touchStart.x, dy = t.clientY - touchStart.y;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 25) return;
+  if (Math.abs(dx) > Math.abs(dy)) turn(dx > 0 ? 1 : -1, 0);
+  else turn(0, dy > 0 ? 1 : -1);
+  touchStart = { x: t.clientX, y: t.clientY };
+  swiped = true;
+}, { passive: false });
+
+canvas.addEventListener("touchend", e => {
+  e.preventDefault();
+  if (!swiped && !running) start(); // a tap
+  touchStart = null;
+}, { passive: false });
+
+// On-screen arrow buttons (shown on touch devices)
+document.querySelectorAll("#pad button").forEach(b => {
+  b.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    turn(+b.dataset.dx, +b.dataset.dy);
+  });
 });
 
 // Start screen
@@ -97,4 +137,4 @@ ctx.fillRect(0, 0, canvas.width, canvas.height);
 ctx.fillStyle = "#fff";
 ctx.textAlign = "center";
 ctx.font = "bold 22px system-ui";
-ctx.fillText("Press Space to start", canvas.width / 2, 205);
+ctx.fillText("Press Space or tap to start", canvas.width / 2, 205);
