@@ -15,6 +15,7 @@ const MAX_SCORES = 5;        // size of the high-score table
 // Page elements
 const diffSel = document.getElementById("difficulty");
 const wallsSel = document.getElementById("walls");
+const mapSel = document.getElementById("map");
 const pauseBtn = document.getElementById("pause");
 const muteBtn = document.getElementById("mute");
 const scoresEl = document.getElementById("scores");
@@ -28,13 +29,17 @@ const MOVED = 0, ATE_FOOD = 1, ATE_GOLD = 2, DIED = 3, WON = 4;
 
 // ---------- Settings (difficulty + walls) ----------
 let difficulty = "medium", wrap = false;
+let mapId = 0;
 try {
   const d = localStorage.getItem("snake-difficulty");
   if (DIFFICULTY[d]) difficulty = d;
   wrap = localStorage.getItem("snake-wrap") === "1";
+  const savedMap = Number(localStorage.getItem("snake-map"));
+  if ([0, 1, 2].includes(savedMap)) mapId = savedMap;
 } catch (e) {}
 diffSel.value = difficulty;
 wallsSel.value = wrap ? "wrap" : "solid";
+mapSel.value = String(mapId);
 
 function applyWallLook() {
   // dashed border = you can pass through the walls
@@ -55,9 +60,15 @@ wallsSel.addEventListener("change", () => {
   wallsSel.blur();
 });
 
+mapSel.addEventListener("change", () => {
+  mapId = [0, 1, 2].includes(Number(mapSel.value)) ? Number(mapSel.value) : 0;
+  try { localStorage.setItem("snake-map", String(mapId)); } catch (e) {}
+  mapSel.blur();
+});
 function lockSettings(locked) {
   diffSel.disabled = locked;
   wallsSel.disabled = locked;
+  mapSel.disabled = locked;
 }
 
 // ---------- High scores (top 5, kept in this browser) ----------
@@ -180,7 +191,7 @@ function updateHud() {
 function start() {
   if (!wasm) return; // engine is still loading
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-  wasm.game_init(N, wrap ? 1 : 0, (Math.random() * 4294967296) >>> 0);
+  wasm.game_init(N, wrap ? 1 : 0, (Math.random() * 4294967296) >>> 0, mapId);
   paused = false;
   pauseBtn.textContent = "⏸ Pause";
   pauseBtn.disabled = false;
@@ -284,6 +295,11 @@ function overlay(title, lines, alpha) {
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  for (let i=0,len=wasm.game_obstacle_len();i<len;i++) {
+    const x=wasm.game_obstacle_x(i), y=wasm.game_obstacle_y(i);
+    ctx.fillStyle="#687080";
+    ctx.fillRect(x*SIZE+1,y*SIZE+1,SIZE-2,SIZE-2);
+  }
   // normal food (-1 when the board is full)
   const fx = wasm.game_food_x();
   if (fx >= 0) {
@@ -390,7 +406,7 @@ pauseBtn.disabled = true;
     if (!res.ok) throw new Error("HTTP " + res.status);
     const { instance } = await WebAssembly.instantiate(await res.arrayBuffer(), {});
     wasm = instance.exports;
-    wasm.game_init(N, wrap ? 1 : 0, (Math.random() * 4294967296) >>> 0);
+    wasm.game_init(N, wrap ? 1 : 0, (Math.random() * 4294967296) >>> 0, mapId);
     draw();
     overlay("Snake", ["Press Space or tap to start"], 0.55);
   } catch (err) {

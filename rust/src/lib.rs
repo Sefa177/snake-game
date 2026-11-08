@@ -21,6 +21,16 @@ const WON: i32 = 4;
 
 type Cell = (i32, i32);
 
+fn map_obstacles(n: i32, map_id: i32) -> Vec<Cell> {
+ let mut cells=Vec::new();
+ match map_id {
+  1=>{for &(ox,oy) in &[(5,5),(13,5),(5,13),(13,13)] {for dy in 0..2 {for dx in 0..2 {cells.push((ox+dx,oy+dy));}}}}
+  2=>{for x in 3..=16 {if x!=9 && x!=10 {cells.push((x,5));cells.push((x,14));}} for y in 6..=13 {if y!=10 {cells.push((5,y));cells.push((14,y));}}}
+  _=>{}
+ }
+ cells.retain(|&(x,y)| x>=0 && y>=0 && x<n && y<n); cells
+}
+
 struct Gold {
     pos: Cell,
     expires: f64, // timestamp in ms (Date.now())
@@ -29,6 +39,7 @@ struct Gold {
 struct Game {
     n: i32, // the board is n x n cells
     wrap: bool,
+    obstacles: Vec<Cell>,
     snake: VecDeque<Cell>, // front = head
     dir: Cell,
     queue: Vec<Cell>, // turns waiting for the next ticks (max 2)
@@ -43,15 +54,17 @@ struct Game {
 }
 
 impl Game {
-    fn new(n: i32, wrap: bool, seed: u32) -> Game {
+    fn new(n: i32, wrap: bool, seed: u32, map_id: i32) -> Game {
         let mid = n / 2;
         let mut snake = VecDeque::new();
         snake.push_back((mid, mid));
         snake.push_back((mid - 1, mid));
         snake.push_back((mid - 2, mid));
+        let obstacles = map_obstacles(n, map_id);
         let mut game = Game {
             n,
             wrap,
+            obstacles,
             snake,
             dir: (1, 0),
             queue: Vec::new(),
@@ -91,6 +104,9 @@ impl Game {
         let n = self.n;
         let mut taken = vec![false; (n * n) as usize];
         for &c in &self.snake {
+            taken[self.index(c)] = true;
+        }
+        for &c in &self.obstacles {
             taken[self.index(c)] = true;
         }
         if let Some(c) = self.food {
@@ -160,7 +176,8 @@ impl Game {
             .iter()
             .enumerate()
             .any(|(i, &c)| c == new_head && !(i == last && !will_eat));
-        if hit_wall || hit_self {
+        let hit_obstacle = self.obstacles.contains(&new_head);
+        if hit_wall || hit_self || hit_obstacle {
             return DIED;
         }
 
@@ -218,7 +235,7 @@ impl Game {
 // The game lives in one thread-local value; JS calls these plain functions.
 
 thread_local! {
-    static GAME: RefCell<Game> = RefCell::new(Game::new(20, false, 1));
+    static GAME: RefCell<Game> = RefCell::new(Game::new(20, false, 1, 0));
 }
 
 fn with_game<R>(f: impl FnOnce(&mut Game) -> R) -> R {
@@ -230,9 +247,9 @@ fn with_game<R>(f: impl FnOnce(&mut Game) -> R) -> R {
 
 /// Starts a new game on an n x n board.
 #[no_mangle]
-pub extern "C" fn game_init(n: i32, wrap: i32, seed: u32) {
+pub extern "C" fn game_init(n: i32, wrap: i32, seed: u32, map_id: i32) {
     with_game(|g| {
-        *g = Game::new(n, wrap != 0, seed);
+        *g = Game::new(n, wrap != 0, seed, map_id);
     });
 }
 
@@ -284,6 +301,12 @@ pub extern "C" fn game_snake_y(i: i32) -> i32 {
     with_game(|g| g.snake.get(i as usize).map_or(-1, |c| c.1))
 }
 
+#[no_mangle]
+pub extern "C" fn game_obstacle_len() -> i32 { with_game(|g| g.obstacles.len() as i32) }
+#[no_mangle]
+pub extern "C" fn game_obstacle_x(i:i32)->i32 { with_game(|g|g.obstacles.get(i as usize).map_or(-1,|c|c.0)) }
+#[no_mangle]
+pub extern "C" fn game_obstacle_y(i:i32)->i32 { with_game(|g|g.obstacles.get(i as usize).map_or(-1,|c|c.1)) }
 /// Food position, or -1 when there is none (board full).
 #[no_mangle]
 pub extern "C" fn game_food_x() -> i32 {
@@ -326,7 +349,7 @@ mod tests {
     use super::*;
 
     fn game_with(snake: &[Cell], dir: Cell, food: Option<Cell>) -> Game {
-        let mut g = Game::new(20, false, 7);
+        let mut g = Game::new(20, false, 7, 0);
         g.snake = snake.iter().copied().collect();
         g.dir = dir;
         g.queue.clear();
@@ -337,7 +360,7 @@ mod tests {
 
     #[test]
     fn quick_turns_are_buffered() {
-        let mut g = Game::new(20, false, 7);
+        let mut g = Game::new(20, false, 7, 0);
         g.turn(0, -1);
         g.turn(-1, 0);
         assert_eq!(g.queue.len(), 2);
@@ -349,7 +372,7 @@ mod tests {
 
     #[test]
     fn u_turns_repeats_and_overflow_are_ignored() {
-        let mut g = Game::new(20, false, 7);
+        let mut g = Game::new(20, false, 7, 0);
         g.turn(-1, 0); // reverse of the current direction
         assert!(g.queue.is_empty());
         g.turn(0, -1);
@@ -450,7 +473,7 @@ mod tests {
 
     #[test]
     fn random_free_never_returns_an_occupied_cell() {
-        let mut g = Game::new(20, false, 12345);
+        let mut g = Game::new(20, false, 12345, 0);
         for _ in 0..200 {
             let c = g.random_free().unwrap();
             assert!(!g.snake.contains(&c));
