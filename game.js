@@ -22,7 +22,8 @@ const pauseBtn = document.getElementById("pause");
 const muteBtn = document.getElementById("mute");
 const scoresEl = document.getElementById("scores");
 
-let snake, dir, nextDir, food, gold, score, eaten, level, loop, running;
+let snake, dir, food, gold, score, eaten, level, loop, running;
+let queue = [];  // buffered turns (max 2) so quick key presses are not lost
 let paused = false, goldLeft = 0;
 
 // ---------- Settings (difficulty + walls) ----------
@@ -180,18 +181,22 @@ function isFree(x, y) {
     && !(gold && gold.x === x && gold.y === y);
 }
 
+// Returns a random empty cell, or null when the board is completely full
 function randomFree() {
-  let p;
-  do {
-    p = { x: Math.floor(Math.random() * N), y: Math.floor(Math.random() * N) };
-  } while (!isFree(p.x, p.y));
-  return p;
+  const free = [];
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      if (isFree(x, y)) free.push({ x, y });
+    }
+  }
+  return free.length ? free[Math.floor(Math.random() * free.length)] : null;
 }
 
 function start() {
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   snake = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }];
-  dir = nextDir = { x: 1, y: 0 };
+  dir = { x: 1, y: 0 };
+  queue = [];
   score = 0;
   eaten = 0;
   level = 1;
@@ -224,7 +229,7 @@ function onEat(points, isGold) {
 }
 
 function tick() {
-  dir = nextDir;
+  if (queue.length) dir = queue.shift();
   let hx = snake[0].x + dir.x, hy = snake[0].y + dir.y;
   if (wrap) { // walls are open: come out on the other side
     hx = (hx + N) % N;
@@ -242,11 +247,15 @@ function tick() {
   if (head.x === food.x && head.y === food.y) {
     food = null;
     food = randomFree();
-    if (!gold && Math.random() < GOLD_CHANCE) {
-      gold = randomFree();
-      gold.expires = Date.now() + GOLD_TIME;
+    if (food && !gold && Math.random() < GOLD_CHANCE) {
+      const g = randomFree();
+      if (g) {
+        g.expires = Date.now() + GOLD_TIME;
+        gold = g;
+      }
     }
     onEat(1, false);
+    if (!food) return gameOver(true); // no empty cell left: the snake fills the board
   } else if (gold && head.x === gold.x && head.y === gold.y) {
     gold = null;
     onEat(GOLD_POINTS, true);
@@ -256,14 +265,14 @@ function tick() {
   draw();
 }
 
-function gameOver() {
+function gameOver(won = false) {
   running = false;
   paused = false;
   clearInterval(loop);
   pauseBtn.disabled = true;
   pauseBtn.textContent = "⏸ Pause";
   lockSettings(false);
-  sfx.over();
+  if (won) sfx.level(); else sfx.over();
   if (score > best) {
     best = score;
     document.getElementById("best").textContent = best;
@@ -277,7 +286,8 @@ function gameOver() {
   ];
   if (rank === 0) lines.unshift("★ New best score! ★");
   else if (rank > 0) lines.unshift("You made the Top " + MAX_SCORES + "!");
-  overlay("Game Over", lines, 0.65);
+  if (won) lines.unshift("You filled the whole board!");
+  overlay(won ? "You Win!" : "Game Over", lines, 0.65);
 }
 
 // ---------- Pause ----------
@@ -330,11 +340,13 @@ function overlay(title, lines, alpha) {
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // normal food
-  ctx.fillStyle = "#ff5a5f";
-  ctx.beginPath();
-  ctx.arc(food.x * SIZE + SIZE / 2, food.y * SIZE + SIZE / 2, SIZE / 2 - 2, 0, Math.PI * 2);
-  ctx.fill();
+  // normal food (null when the board is full)
+  if (food) {
+    ctx.fillStyle = "#ff5a5f";
+    ctx.beginPath();
+    ctx.arc(food.x * SIZE + SIZE / 2, food.y * SIZE + SIZE / 2, SIZE / 2 - 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // gold food (blinks when it is about to disappear)
   if (gold) {
@@ -365,9 +377,12 @@ const keys = {
 
 function turn(dx, dy) {
   if (!running || paused) return;
-  // prevent reversing into yourself
-  if (dx === -dir.x && dy === -dir.y) return;
-  nextDir = { x: dx, y: dy };
+  // compare with the last turn that is already waiting (or the current direction)
+  const last = queue.length ? queue[queue.length - 1] : dir;
+  if (dx === last.x && dy === last.y) return;     // same direction, nothing to do
+  if (dx === -last.x && dy === -last.y) return;   // prevent reversing into yourself
+  if (queue.length >= 2) return;                  // keep the buffer small
+  queue.push({ x: dx, y: dy });
 }
 
 document.addEventListener("keydown", e => {
