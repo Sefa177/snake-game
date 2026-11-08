@@ -1,5 +1,7 @@
 # 🐍 Snake Game
 
+▶ **Play online:** https://sefa177.github.io/snake-game/
+
 A small retro snake game that runs in the browser. Plain HTML, CSS and JavaScript, no installation required.
 
 ## How to play
